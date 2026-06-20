@@ -42,11 +42,13 @@ jobs:
       - name: Run training (entry point of MLflow Project)
         id: mlflow
         env:
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
           DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
         run: |
           cd MLProject
           source .venv/bin/activate
           export DAGSHUB_USER_TOKEN="$DAGSHUB_TOKEN"
+          echo "DEBUG: DAGSHUB_TOKEN length=${#DAGSHUB_TOKEN}"
           python modelling.py --data-path data/adult_clean.csv --run-name ci
           if [ -f ci_run_id.txt ]; then
             RUN_ID=$(cat ci_run_id.txt)
