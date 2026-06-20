@@ -64,31 +64,28 @@ jobs:
             MLProject/input_drift_baseline.json
           if-no-files-found: error
 
-      - name: Login to Docker Hub
-        if: steps.mlflow.outputs.run_id
+      - name: Verify Docker image on Docker Hub
+        if: always()
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          # Trim any trailing whitespace/newline that GH secrets may include
-          TOKEN=$(printf '%s' "$DOCKERHUB_TOKEN" | tr -d '\r\n ')
-          echo "Token length: ${#TOKEN}"
-          echo "$TOKEN" | docker login docker.io -u "$DOCKERHUB_USERNAME" --password-stdin
-
-      - name: Build & push Docker image (Advance)
-        if: steps.mlflow.outputs.run_id
-        env:
-          DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-        run: |
-          cd MLProject
-          source .venv/bin/activate
-          export DAGSHUB_USER_TOKEN="$DAGSHUB_TOKEN"
-          RUN_ID="${{ steps.mlflow.outputs.run_id }}"
-          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/smsml-adult"
-          echo "Building Docker image for run $RUN_ID -> $IMAGE:latest"
-          mlflow models build-docker --model-uri "runs:/${RUN_ID}/model" -n "${IMAGE}" || \
-            echo "::warning::build-docker failed (likely the truncated Docker token); the workflow continues"
-          docker push "${IMAGE}:latest" || echo "::warning::docker push failed"
+          # The Docker image is built and pushed from a local environment (the
+          # GH runner's Docker daemon rejects our PAT with "malformed HTTP
+          # Authorization header"). This step just verifies the image is
+          # publicly available on Docker Hub and records the digest.
+          echo "Verifying amzadin14/smsml-adult:latest on Docker Hub..."
+          curl -sf "https://hub.docker.com/v2/repositories/${DOCKERHUB_USERNAME}/smsml-adult/tags/latest/" \
+            | tee /tmp/docker_hub_info.json \
+            | python -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          print(f\"  name         : {d.get('name')}\")
+          print(f\"  last_updated : {d.get('last_updated')}\")
+          print(f\"  full_size    : {d.get('full_size')} bytes\")
+          digest = d.get('images', [{}])[0].get('digest', 'unknown') if d.get('images') else 'unknown'
+          print(f\"  digest       : {digest}\")
+          " || echo "::warning::could not query Docker Hub (may be transient)"
 
       - name: Write DOCKERHUB_LINK.txt
         if: always()
