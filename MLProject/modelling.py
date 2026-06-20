@@ -22,9 +22,6 @@ if "DAGSHUB_USER_TOKEN" not in os.environ and "DAGSHUB_TOKEN" in os.environ:
 if "DAGSHUB_TOKEN" not in os.environ and "DAGSHUB_USER_TOKEN" in os.environ:
     os.environ["DAGSHUB_TOKEN"] = os.environ["DAGSHUB_USER_TOKEN"]
 
-# Debug
-print(f"[k3] DAGSHUB_USER_TOKEN set: {'DAGSHUB_USER_TOKEN' in os.environ}  length: {len(os.environ.get('DAGSHUB_USER_TOKEN',''))}")
-
 import dagshub
 import matplotlib
 matplotlib.use("Agg")
