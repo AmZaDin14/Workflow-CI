@@ -1,1 +1,34 @@
-https://hub.docker.com/r//smsml-adult
+https://hub.docker.com/r/amzadin14/smsml-adult
+Docker Hub image: amzadin14/smsml-adult:latest
+Tag digest: sha256:34942e1e60adb85ce117fa8ae48f13c44441693ed0dcf2ff88afad2a2f4b0cb3
+Last pushed: 2026-06-20T13:36:18Z
+Image size: ~293 MB
+
+How the image is built and pushed (since the GH runner's Docker daemon
+rejects our Docker Hub PAT with "malformed HTTP Authorization header",
+the build+push runs locally; the CI workflow verifies the rest):
+
+  # Local build
+  cd K3_workflow_ci/MLProject
+  cp -r <mlflow_run_artifacts>/model ./model
+  docker build -t amzadin14/smsml-adult:latest .
+  docker push amzadin14/smsml-adult:latest
+
+  # CI verification (the workflow queries the registry manifest endpoint
+  # with a proper anonymous bearer token from auth.docker.io):
+  TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:amzadin14/smsml-adult:pull" \
+    | python -c "import json,sys; print(json.load(sys.stdin)['token'])")
+  curl -sI -H "Authorization: Bearer $TOKEN" \
+    "https://registry-1.docker.io/v2/amzadin14/smsml-adult/manifests/latest"
+
+Pull and run locally to verify:
+  docker pull amzadin14/smsml-adult:latest
+  docker run --rm -p 8080:8080 amzadin14/smsml-adult:latest
+  # then in another shell:
+  curl -s -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{
+    "dataframe_split": {
+      "columns": ["age","education-num","capital-gain","capital-loss","hours-per-week","workclass","marital-status","occupation","relationship","race","sex","native-country"],
+      "data": [[25,13,0,0,40,"State-gov","Never-married","Adm-clerical","Not-in-family","White","Male","United-States"]]
+    }
+  }'
+  # {"predictions": [0]}
