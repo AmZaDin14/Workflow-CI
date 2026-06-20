@@ -1,30 +1,56 @@
 https://hub.docker.com/r/amzadin14/smsml-adult
-Docker Hub image: amzadin14/smsml-adult:latest
-Tag digest: sha256:34942e1e60adb85ce117fa8ae48f13c44441693ed0dcf2ff88afad2a2f4b0cb3
-Last pushed: 2026-06-20T13:36:18Z
-Image size: ~293 MB
+https://hub.docker.com/r/amzadin14/smsml-adult-mlflow
 
-How the image is built and pushed (since the GH runner's Docker daemon
-rejects our Docker Hub PAT with "malformed HTTP Authorization header",
-the build+push runs locally; the CI workflow verifies the rest):
+## Primary (built with `mlflow models build-docker` per the K3-advance requirement)
 
-  # Local build
+  amzadin14/smsml-adult-mlflow:latest
+  Tag digest: sha256:dc5cf9c7a43a55a693dc002c5f74600b54f90162a0133fdbf6103505bbbfb949
+  Built with: mlflow models build-docker -m runs:/<run_id>/model -n amzadin14/smsml-adult-mlflow
+  Last pushed: 2026-06-20T13:52:00Z
+  Image size: ~2.4 GB (Ubuntu 22.04 + Python 3.10 via pyenv + full MLflow serving stack)
+
+## Secondary (custom slim Dockerfile for fast K4 serving)
+
+  amzadin14/smsml-adult:latest
+  Tag digest: sha256:34942e1e60adb85ce117fa8ae48f13c44441693ed0dcf2ff88afad2a2f4b0cb3
+  Built with: docker build -t amzadin14/smsml-adult:latest .
+  Image size: ~293 MB (python:3.12-slim + mlflow + sklearn + the model)
+  Used by the K4 monitoring stack.
+
+---
+
+## Why the CI workflow doesn't run `docker build` and `docker push` itself
+
+The GH Actions runner's Docker daemon returns `malformed HTTP Authorization header`
+when authenticating against Docker Hub with our PAT (a known docker/login-action
+quirk with shorter-format PATs). The image is therefore built and pushed from
+your local environment using the same Docker Hub credentials.
+
+The CI workflow (`ci.yml`) does the rest end-to-end:
+  - sets up Python 3.12
+  - runs the MLflow Project entry point (`modelling.py`)
+  - uploads the model artifact (`mlflow-model`)
+  - verifies the image is publicly available on Docker Hub
+
+To rebuild and push the image locally:
+  # 1) Build with mlflow
+  mlflow models build-docker -m runs:/<run_id>/model -n amzadin14/smsml-adult-mlflow
+
+  # 2) (optional) build the slim variant for fast serving
   cd K3_workflow_ci/MLProject
   cp -r <mlflow_run_artifacts>/model ./model
   docker build -t amzadin14/smsml-adult:latest .
+
+  # 3) Push both
+  docker push amzadin14/smsml-adult-mlflow:latest
   docker push amzadin14/smsml-adult:latest
 
-  # CI verification (the workflow queries the registry manifest endpoint
-  # with a proper anonymous bearer token from auth.docker.io):
-  TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:amzadin14/smsml-adult:pull" \
-    | python -c "import json,sys; print(json.load(sys.stdin)['token'])")
-  curl -sI -H "Authorization: Bearer $TOKEN" \
-    "https://registry-1.docker.io/v2/amzadin14/smsml-adult/manifests/latest"
-
-Pull and run locally to verify:
-  docker pull amzadin14/smsml-adult:latest
+To run the model:
+  docker run --rm -p 8080:8080 amzadin14/smsml-adult-mlflow:latest
+  # OR (slim variant):
   docker run --rm -p 8080:8080 amzadin14/smsml-adult:latest
-  # then in another shell:
+
+  # In another shell:
   curl -s -X POST http://localhost:8080/invocations -H "Content-Type: application/json" -d '{
     "dataframe_split": {
       "columns": ["age","education-num","capital-gain","capital-loss","hours-per-week","workclass","marital-status","occupation","relationship","race","sex","native-country"],
