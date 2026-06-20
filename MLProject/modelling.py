@@ -18,6 +18,9 @@ from pathlib import Path
 
 if "DAGSHUB_USER_TOKEN" not in os.environ and "DAGSHUB_TOKEN" in os.environ:
     os.environ["DAGSHUB_USER_TOKEN"] = os.environ["DAGSHUB_TOKEN"]
+# Alias: the CI workflow only sets DAGSHUB_USER_TOKEN, mirror to DAGSHUB_TOKEN
+if "DAGSHUB_TOKEN" not in os.environ and "DAGSHUB_USER_TOKEN" in os.environ:
+    os.environ["DAGSHUB_TOKEN"] = os.environ["DAGSHUB_USER_TOKEN"]
 
 import dagshub
 import matplotlib
