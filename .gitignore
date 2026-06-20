@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+mlruns/
+
+# Notebook
+.ipynb_checkpoints/
+
+# Local artefacts
+ci_run_id.txt
+input_drift_baseline.json
+feature_importance.png
+confusion_matrix.png
+roc_curve.png
+
+# OS
+.DS_Store

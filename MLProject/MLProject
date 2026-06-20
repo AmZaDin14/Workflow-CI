@@ -1,0 +1,9 @@
+name: adult-income-classifier
+conda_env: conda.yaml
+
+entry_points:
+  main:
+    command: "python modelling.py"
+    parameters:
+      data-path: {type: string, default: "data/adult_clean.csv"}
+      run-name: {type: string, default: "ci"}

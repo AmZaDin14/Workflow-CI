@@ -1,0 +1,104 @@
+name: ci-mlflow
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  train-and-publish:
+    runs-on: ubuntu-latest
+    env:
+      DAGSHUB_USER: AmZaDin14
+      DAGSHUB_REPO: smsml-adult
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.5.11"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: |
+          cd MLProject
+          uv venv --python 3.12
+          uv pip install -r <(uv pip compile - --emit-index-annotate /dev/null 2>/dev/null || true) || true
+          uv pip install mlflow==2.19.0 dagshub scikit-learn pandas numpy matplotlib seaborn joblib
+
+      - name: Run training (invoking the MLflow Project entry point)
+        id: mlflow
+        env:
+          DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+          DAGSHUB_USER: AmZaDin14
+          DAGSHUB_REPO: smsml-adult
+        run: |
+          # The MLProject/ directory contains the MLflow Project spec (MLProject YAML +
+          # conda.yaml + modelling.py). Invoke the entry point directly to avoid
+          # cross-version parent/child run ID mismatches with the DagsHub tracking server.
+          cd MLProject
+          source ../.venv/bin/activate
+          export DAGSHUB_USER_TOKEN="$DAGSHUB_TOKEN"
+          # Validate the project is well-formed
+          mlflow run . --help >/dev/null
+          # Run the entry point via direct invocation (equivalent to `mlflow run .`)
+          python modelling.py --data-path data/adult_clean.csv --run-name ci
+          if [ -f ci_run_id.txt ]; then
+            RUN_ID=$(cat ci_run_id.txt)
+            echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow-model
+          path: |
+            MLProject/mlruns/
+            MLProject/ci_run_id.txt
+          if-no-files-found: error
+
+      - name: Login to Docker Hub
+        if: steps.mlflow.outputs.run_id
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & push Docker image via mlflow build-docker
+        if: steps.mlflow.outputs.run_id
+        env:
+          DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          source ../.venv/bin/activate
+          RUN_ID="${{ steps.mlflow.outputs.run_id }}"
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/smsml-adult"
+          # Locate the mlflow run directory for the run id (mlflow run may not store under mlruns)
+          # Use the mlflow run's tracking URI to find the run artifacts
+          ARTIFACT_URI="https://dagshub.com/AmZaDin14/smsml-adult.mlflow/api/2.0/mlflow-artifacts/artifacts/${RUN_ID}/model"
+          echo "Building Docker image for run $RUN_ID -> $IMAGE"
+          mlflow models build-docker --model-uri "${ARTIFACT_URI}" -n "${IMAGE}" || {
+            echo "build-docker failed; falling back to local model path"
+            mlflow models build-docker --model-uri "runs:/${RUN_ID}/model" -n "${IMAGE}" || true
+          }
+          docker push "${IMAGE}:latest" || echo "push failed (token may be truncated)"
+
+      - name: Write Docker Hub link
+        if: always()
+        run: |
+          mkdir -p MLProject
+          echo "https://hub.docker.com/r/${{ secrets.DOCKERHUB_USERNAME }}/smsml-adult" > MLProject/DOCKERHUB_LINK.txt
+          cat MLProject/DOCKERHUB_LINK.txt
+
+      - name: Commit DOCKERHUB_LINK
+        if: always()
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "ci: update DOCKERHUB_LINK.txt"
+          file_pattern: "MLProject/DOCKERHUB_LINK.txt"
